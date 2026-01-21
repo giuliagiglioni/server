@@ -1,0 +1,28 @@
+services:
+  embeddings:
+    build: .
+    container_name: embeddings
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    networks:
+      - llm-net
+
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+
+    # NESSUNA ports: resta interno
+
+volumes:
+  hf-cache:
+
+networks:
+  llm-net:
+    external: true
