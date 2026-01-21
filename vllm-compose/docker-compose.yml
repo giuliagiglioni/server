@@ -1,0 +1,47 @@
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm
+    restart: unless-stopped
+
+    # GPU (richiede nvidia-container-toolkit)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    ipc: host
+
+#    ports:
+#      - "${PORT}:8000"
+
+    environment:
+      HF_TOKEN: "${HF_TOKEN}"
+
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+
+    command:
+      - "--model"
+      - "${MODEL_ID}"
+      - "--dtype"
+      - "auto"
+      - "--max-model-len"
+      - "${MAX_MODEL_LEN}"
+      - "--gpu-memory-utilization"
+      - "${GPU_MEMORY_UTILIZATION}"
+      - "--api-key"
+      - "${VLLM_API_KEY}"
+
+    networks:
+      - llm-net
+
+volumes:
+  hf-cache:
+
+networks:
+  llm-net:
+    external: true
