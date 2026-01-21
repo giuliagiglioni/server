@@ -1,0 +1,36 @@
+services:
+  gateway-db:
+    image: postgres:16-alpine
+    container_name: gateway-db
+    environment:
+      POSTGRES_DB: gateway
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway
+    volumes:
+      - gateway_db_data:/var/lib/postgresql/data
+    networks:
+      - llm-net
+    restart: unless-stopped
+
+  gateway-api:
+    build: .
+    container_name: gateway-api
+    environment:
+      DATABASE_URL: postgresql+psycopg2://gateway:gateway@gateway-db:5432/gateway
+      VLLM_BASE_URL: http://vllm:8000
+      VLLM_UPSTREAM_API_KEY: ${VLLM_API_KEY}
+      API_KEY_HEADER: X-API-Key
+      LOG_PROMPTS: "false"
+    depends_on:
+      - gateway-db
+    networks:
+      - llm-net
+    restart: unless-stopped
+    # NIENTE ports: (resta interno). Lo esporrà Nginx tramite routing su llm-net.
+
+volumes:
+  gateway_db_data:
+
+networks:
+  llm-net:
+    external: true
