@@ -1,0 +1,20 @@
+[ req ]
+default_bits       = 4096
+prompt             = no
+default_md         = sha256
+distinguished_name = dn
+req_extensions     = req_ext
+
+[ dn ]
+C  = IT
+ST = Italy
+L  = Perugia
+O  = Research Lab
+OU = LLM Infrastructure
+CN = 141.250.40.120
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+IP.1 = 141.250.40.120
