@@ -11,7 +11,11 @@ services:
       - ./nginx/logs:/var/log/nginx
     networks:
       - llm-net
+      - rag-net
 
 networks:
   llm-net:
     external: true
+  rag-net:
+    external: true
+    name: rag-agentic-ai-unipg_default
