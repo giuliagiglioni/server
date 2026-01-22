@@ -4,7 +4,7 @@ services:
     container_name: rag-ui
     restart: unless-stopped
     environment:
-      - RAG_API_BASE_URL=http://rag-api:8000
+      - RAG_API_BASE_URL=https://141.250.40.120/rag/api
       - RAG_API_TIMEOUT=60
     networks:
       - llm-net
