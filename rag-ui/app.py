@@ -5,6 +5,39 @@ import streamlit as st
 
 st.set_page_config(page_title="RAG Assistant", layout="centered")
 
+st.markdown(
+    """
+    <style>
+    /* Larghezza “sidebar-like” per il popover */
+    :root { --sidebar-like-width: 21rem; }
+
+    /* Bottone del popover in sidebar: full width */
+    section[data-testid="stSidebar"] [data-testid="stPopover"] button {
+        width: 100% !important;
+        justify-content: space-between !important;
+    }
+
+    /* Corpo del popover: forzalo a larghezza sidebar e aggancialo a sinistra */
+    div[data-testid="stPopoverBody"]{
+        width: var(--sidebar-like-width) !important;
+        max-width: var(--sidebar-like-width) !important;
+        min-width: var(--sidebar-like-width) !important;
+        left: 0 !important;          /* evita che si “allarghi” verso destra */
+        right: auto !important;
+    }
+
+    /* Contenuto interno: occupa tutta la larghezza del popover */
+    div[data-testid="stPopoverBody"] div[data-testid="stVerticalBlock"],
+    div[data-testid="stPopoverBody"] div[data-testid="stRadio"]{
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 # === Config ===
 RAG_API_BASE_URL = os.getenv("RAG_API_BASE_URL", "http://rag-api:8000")
 RAG_API_TIMEOUT = float(os.getenv("RAG_API_TIMEOUT", "60"))
@@ -19,18 +52,35 @@ def call_rag(question: str, technique: str) -> dict:
     if RAG_UI_API_KEY:
         headers["X-API-Key"] = RAG_UI_API_KEY
 
-    r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=RAG_API_TIMEOUT)
+    r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=RAG_API_TIMEOUT, verify=False)
     r.raise_for_status()
     return r.json()
 
 # === Sidebar ===
 st.sidebar.title("Impostazioni")
-search_technique = st.sidebar.selectbox(
-    "Tecnica di ricerca",
-    ["hybrid", "dense", "sparse"],
-    index=0
-)
+
+OPTIONS = ["hybrid", "dense", "sparse"]
+
+if "search_technique" not in st.session_state:
+    st.session_state.search_technique = "hybrid"
+
+def _update_technique():
+    st.session_state.search_technique = st.session_state._technique_tmp
+
+with st.sidebar.popover(f"Tecnica di ricerca: {st.session_state.search_technique}"):
+    st.radio(
+        "Tecnica di ricerca",
+        OPTIONS,
+        index=OPTIONS.index(st.session_state.search_technique),
+        key="_technique_tmp",
+        label_visibility="collapsed",
+        on_change=_update_technique,
+    )
+
+search_technique = st.session_state.search_technique
 show_sources = st.sidebar.checkbox("Mostra fonti/chunk", value=True)
+
+
 
 # === Session memory ===
 if "messages" not in st.session_state:
