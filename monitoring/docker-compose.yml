@@ -18,14 +18,17 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+
+      # Serve Grafana under https://141.250.40.120/grafana/
+      - GF_SERVER_DOMAIN=141.250.40.120
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
     volumes:
       - grafana_data:/var/lib/grafana
-    ports:
-      - "3000:3000"
     networks:
       - llm-net
     restart: unless-stopped
-
+  
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
