@@ -44,10 +44,13 @@ services:
     restart: unless-stopped
 
   dcgm-exporter:
-    image: nvcr.io/nvidia/k8s/dcgm-exporter:2.1.4-2.3.1-ubuntu20.04
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:latest
     container_name: dcgm-exporter
     ports:
       - "9400:9400"
+    volumes:
+      - ./dcgm-exporter/counters.csv:/etc/dcgm-exporter/counters.csv:ro
+    command: ["-f", "/etc/dcgm-exporter/counters.csv"]
     networks:
       - llm-net
     restart: unless-stopped
