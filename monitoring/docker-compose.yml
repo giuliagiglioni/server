@@ -23,7 +23,7 @@ services:
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
       - GF_USERS_ALLOW_SIGN_UP=true
       - GF_USERS_AUTO_ASSIGN_ORG=true
-      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Editor
       - GF_USERS_ALLOW_ORG_CREATE=false
     volumes:
       - grafana_data:/var/lib/grafana
