@@ -6,7 +6,7 @@ from app.db import get_db
 from app.config import API_KEY_HEADER
 from app.ratelimit import enforce_rpm_limit
 from app.security import validate_api_key
-from app.proxy import forward_to_vllm, forward_to_embeddings
+from app.proxy import forward_to_vllm, forward_to_embeddings,  forward_to_reranker
 from app.models import AuditLog
 
 app = FastAPI(title="Gateway", version="0.1.0")
@@ -99,3 +99,14 @@ async def llm_proxy(full_path: str, request: Request, db: Session = Depends(get_
         db.add(log)
         db.commit()
         raise HTTPException(status_code=502, detail="Upstream unavailable")
+
+@app.api_route("/reranker/{full_path:path}", methods=["GET","POST"])
+async def reranker_proxy(full_path: str, request: Request, db: Session = Depends(get_db)):
+    api_key_row = get_api_key_or_401(request, db)
+    enforce_rpm_limit(api_key_row.id, api_key_row.rpm_limit)
+
+    path = f"/{full_path}"
+    try:
+        return await forward_to_reranker(request, path)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Reranker upstream unavailable")
