@@ -35,6 +35,9 @@ services:
       - "${GPU_MEMORY_UTILIZATION}"
       - "--api-key"
       - "${VLLM_API_KEY}"
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "llama3_json"
 
     networks:
       - llm-net
