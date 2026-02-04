@@ -1,7 +1,7 @@
 import httpx
 import os
 from fastapi import Request, Response
-from app.config import VLLM_BASE_URL, EMBEDDINGS_BASE_URL
+from app.config import VLLM_BASE_URL, EMBEDDINGS_BASE_URL, RERANKER_BASE_URL
 VLLM_UPSTREAM_API_KEY = os.getenv("VLLM_UPSTREAM_API_KEY", "").strip()
 
 HOP_BY_HOP_HEADERS = {
@@ -79,3 +79,39 @@ async def forward_to_embeddings(request: Request, new_path: str) -> Response:
         headers={k: v for k, v in r.headers.items() if k.lower() not in DROP_HEADERS},
         media_type=r.headers.get("content-type"),
     )
+
+async def forward_to_reranker(request: Request, new_path: str) -> Response:
+    """
+    Proxy requests to the internal reranker service.
+    Authentication is handled at the gateway level.
+    """
+    url = f"{RERANKER_BASE_URL}{new_path}"
+    params = dict(request.query_params)
+
+    headers = {}
+    for k, v in request.headers.items():
+        lk = k.lower()
+        if lk in HOP_BY_HOP_HEADERS:
+            continue
+        if lk == "x-api-key":
+            continue
+        headers[k] = v
+
+    body = await request.body()
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+        r = await client.request(
+            method=request.method,
+            url=url,
+            params=params,
+            content=body,
+            headers=headers,
+        )
+
+    return Response(
+        content=r.content,
+        status_code=r.status_code,
+        headers={k: v for k, v in r.headers.items() if k.lower() not in DROP_HEADERS},
+        media_type=r.headers.get("content-type"),
+    )
+
