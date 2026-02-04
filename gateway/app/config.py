@@ -11,3 +11,6 @@ LOG_PROMPTS = os.getenv("LOG_PROMPTS", "false").lower() == "true"
 
 # Embeddings service (internal)
 EMBEDDINGS_BASE_URL = os.getenv("EMBEDDINGS_BASE_URL", "http://embeddings:8002")
+
+# Reranker service (internal)
+RERANKER_BASE_URL = os.getenv("RERANKER_BASE_URL", "http://reranker:8003")
