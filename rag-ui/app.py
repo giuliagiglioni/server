@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import streamlit as st
+import uuid
 
 st.set_page_config(page_title="RAG Assistant", layout="centered")
 
@@ -44,9 +45,12 @@ RAG_API_TIMEOUT = float(os.getenv("RAG_API_TIMEOUT", "60"))
 # Se in futuro vuoi proteggere /query con una chiave interna:
 RAG_UI_API_KEY = os.getenv("RAG_UI_API_KEY", "")
 
-def call_rag(question: str, technique: str) -> dict:
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
+def call_rag(question: str, technique: str, session_id: str) -> dict:
     url = f"{RAG_API_BASE_URL.rstrip('/')}/query"
-    payload = {"question": question, "search_technique": technique}
+    payload = {"question": question, "search_technique": technique, "session_id": session_id}
 
     headers = {"Content-Type": "application/json"}
     if RAG_UI_API_KEY:
@@ -62,7 +66,7 @@ st.sidebar.title("Impostazioni")
 OPTIONS = ["hybrid", "dense", "sparse"]
 
 if "search_technique" not in st.session_state:
-    st.session_state.search_technique = "hybrid"
+    st.session_state.search_technique = "dense"
 
 def _update_technique():
     st.session_state.search_technique = st.session_state._technique_tmp
@@ -113,7 +117,7 @@ if question:
     with st.chat_message("assistant"):
         with st.spinner("Sto cercando nei documenti..."):
             try:
-                resp = call_rag(question, search_technique)
+                resp = call_rag(question, search_technique, st.session_state.session_id)
                 answer = resp.get("answer", "")
                 contexts = resp.get("contexts", []) if isinstance(resp.get("contexts", []), list) else []
 
