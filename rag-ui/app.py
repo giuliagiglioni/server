@@ -48,19 +48,44 @@ RAG_UI_API_KEY = os.getenv("RAG_UI_API_KEY", "")
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
-def call_rag(question: str, technique: str, session_id: str) -> dict:
+def call_rag(question: str, technique: str, session_id: str, allow_fallback: bool = True, force_fallback: bool = False) -> dict:
+
     url = f"{RAG_API_BASE_URL.rstrip('/')}/query"
-    payload = {"question": question, "search_technique": technique, "session_id": session_id}
+
+    payload = {
+
+        "question": question,
+
+        "search_technique": technique,
+
+        "session_id": session_id,
+
+        "allow_fallback": allow_fallback,
+
+        "force_fallback": force_fallback
+
+    }
+
+
 
     headers = {"Content-Type": "application/json"}
+
     if RAG_UI_API_KEY:
+
         headers["X-API-Key"] = RAG_UI_API_KEY
 
+
+
     r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=RAG_API_TIMEOUT, verify=False)
+
     r.raise_for_status()
+
     return r.json()
 
+
+
 # === Sidebar ===
+
 st.sidebar.title("Impostazioni")
 
 OPTIONS = ["hybrid", "dense", "sparse"]
@@ -108,36 +133,84 @@ for m in st.session_state.messages:
 question = st.chat_input("Scrivi una domanda...")
 
 if question:
+
     # Mostra e salva messaggio utente
+
     st.session_state.messages.append({"role": "user", "content": question, "sources": []})
+
     with st.chat_message("user"):
+
         st.markdown(question)
 
+
+
     # Chiamata al backend + risposta
+
     with st.chat_message("assistant"):
-        with st.spinner("Sto cercando nei documenti..."):
-            try:
-                resp = call_rag(question, search_technique, st.session_state.session_id)
-                answer = resp.get("answer", "")
-                contexts = resp.get("contexts", []) if isinstance(resp.get("contexts", []), list) else []
 
-                st.markdown(answer if answer else "_(nessuna risposta)_")
+        try:
 
-                if show_sources and contexts:
-                    with st.expander("Fonti / chunk usati"):
-                        for i, c in enumerate(contexts, 1):
-                            st.markdown(f"**Fonte {i}**")
-                            st.code(c)
+            # 1) prima passata
 
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": answer if answer else "",
-                    "sources": contexts
-                })
+            with st.spinner("Sto cercando nei documenti..."):
+                resp = call_rag(question, search_technique, st.session_state.session_id, allow_fallback=True, force_fallback=False)
 
-            except requests.HTTPError as e:
-                st.error(f"Errore HTTP dal backend: {e}")
-            except requests.RequestException as e:
-                st.error(f"Errore di rete verso il backend: {e}")
-            except Exception as e:
-                st.error(f"Errore inatteso: {e}")
+#            st.write({"DEBUG_first": resp})
+
+            # 2) fallback (seconda passata)
+
+            if resp.get("status") == "fallback_required":
+
+                with st.spinner("Sto cercando più a fondo..."):
+
+                    resp = call_rag(question, search_technique, st.session_state.session_id, allow_fallback=True, force_fallback=True)
+#                st.write({"DEBUG_second": resp})
+
+
+            answer = resp.get("answer", "")
+
+            contexts = resp.get("contexts", []) if isinstance(resp.get("contexts", []), list) else []
+
+
+
+            st.markdown(answer if answer else "_(nessuna risposta)_")
+
+
+
+            if show_sources and contexts:
+
+                with st.expander("Fonti / chunk usati"):
+
+                    for i, c in enumerate(contexts, 1):
+
+                        st.markdown(f"**Fonte {i}**")
+
+                        st.code(c)
+
+
+
+            st.session_state.messages.append({
+
+                "role": "assistant",
+
+                "content": answer if answer else "",
+
+                "sources": contexts
+
+            })
+
+
+
+        except requests.HTTPError as e:
+
+            st.error(f"Errore HTTP dal backend: {e}")
+
+        except requests.RequestException as e:
+
+            st.error(f"Errore di rete verso il backend: {e}")
+
+        except Exception as e:
+
+            st.error(f"Errore inatteso: {e}")
+
+    # Chiamata al backend + risposta
