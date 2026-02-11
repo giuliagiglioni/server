@@ -48,39 +48,70 @@ RAG_UI_API_KEY = os.getenv("RAG_UI_API_KEY", "")
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
-def call_rag(question: str, technique: str, session_id: str, allow_fallback: bool = True, force_fallback: bool = False) -> dict:
-
+def call_rag(question: str, technique: str, session_id: str, force_fallback: bool = False) -> dict:
     url = f"{RAG_API_BASE_URL.rstrip('/')}/query"
-
     payload = {
-
         "question": question,
-
         "search_technique": technique,
-
         "session_id": session_id,
-
-        "allow_fallback": allow_fallback,
-
-        "force_fallback": force_fallback
-
+        "force_fallback": force_fallback,
+        "stream": False,
     }
 
-
-
     headers = {"Content-Type": "application/json"}
-
     if RAG_UI_API_KEY:
-
         headers["X-API-Key"] = RAG_UI_API_KEY
 
-
-
-    r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=RAG_API_TIMEOUT, verify=False)
-
+    r = requests.post(
+        url,
+        headers=headers,
+        data=json.dumps(payload),
+        timeout=RAG_API_TIMEOUT,
+        verify=False
+    )
     r.raise_for_status()
-
     return r.json()
+
+
+def call_rag_stream(question: str, technique: str, session_id: str, force_fallback: bool = False):
+    url = f"{RAG_API_BASE_URL.rstrip('/')}/query"
+    payload = {
+        "question": question,
+        "search_technique": technique,
+        "session_id": session_id,
+        "force_fallback": force_fallback,
+        "stream": True,
+    }
+
+    headers = {"Content-Type": "application/json"}
+    headers["Accept"] = "text/event-stream"
+    
+    if RAG_UI_API_KEY:
+        headers["X-API-Key"] = RAG_UI_API_KEY
+
+    with requests.post(
+        url,
+        headers=headers,
+        data=json.dumps(payload),
+        timeout=RAG_API_TIMEOUT,
+        verify=False,
+        stream=True
+    ) as r:
+        r.raise_for_status()
+
+        for raw_line in r.iter_lines(decode_unicode=True):
+            if not raw_line:
+                continue
+
+            line = raw_line.strip()
+            if not line.startswith("data:"):
+                continue
+
+            data = line[len("data:"):].strip()
+            try:
+                yield json.loads(data)
+            except json.JSONDecodeError:
+                continue
 
 
 
@@ -131,86 +162,104 @@ for m in st.session_state.messages:
 
 # === Input ===
 question = st.chat_input("Scrivi una domanda...")
+use_stream = True
+force_fallback_ui = False
 
 if question:
-
-    # Mostra e salva messaggio utente
-
     st.session_state.messages.append({"role": "user", "content": question, "sources": []})
-
     with st.chat_message("user"):
-
         st.markdown(question)
 
-
-
-    # Chiamata al backend + risposta
-
     with st.chat_message("assistant"):
-
         try:
+            if not use_stream:
+                with st.spinner("Sto cercando nei documenti..."):
+                    resp = call_rag(
+                        question,
+                        search_technique,
+                        st.session_state.session_id,
+                        force_fallback=force_fallback_ui
+                    )
 
-            # 1) prima passata
+                answer = resp.get("answer", "") or ""
+                contexts = resp.get("contexts", [])
+                if not isinstance(contexts, list):
+                    contexts = []
 
-            with st.spinner("Sto cercando nei documenti..."):
-                resp = call_rag(question, search_technique, st.session_state.session_id, allow_fallback=True, force_fallback=False)
+                st.markdown(answer if answer else "_(nessuna risposta)_")
 
-#            st.write({"DEBUG_first": resp})
+                if show_sources and contexts:
+                    with st.expander("Fonti / chunk usati"):
+                        for i, c in enumerate(contexts, 1):
+                            st.markdown(f"**Fonte {i}**")
+                            st.code(c)
 
-            # 2) fallback (seconda passata)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": answer,
+                    "sources": contexts
+                })
 
-            if resp.get("status") == "fallback_required":
+            else:
+                # STREAMING MODE (SSE)
+                status_box = st.empty()
+                answer_box = st.empty()
+                sources_box = st.empty()
 
-                with st.spinner("Sto cercando più a fondo..."):
+                events = call_rag_stream(
+                    question,
+                    search_technique,
+                    st.session_state.session_id,
+                    force_fallback=force_fallback_ui
+                )
 
-                    resp = call_rag(question, search_technique, st.session_state.session_id, allow_fallback=True, force_fallback=True)
-#                st.write({"DEBUG_second": resp})
+                final_answer = ""
+                final_contexts = []
 
+                for ev in events:
+                    ev_type = ev.get("type")
 
-            answer = resp.get("answer", "")
+                    if ev_type == "heartbeat":
+                        continue
 
-            contexts = resp.get("contexts", []) if isinstance(resp.get("contexts", []), list) else []
+                    if ev_type == "status":
+                        msg = ev.get("message", "")
+                        if msg:
+                            status_box.info(msg)
 
+                    elif ev_type == "error":
+                        msg = ev.get("message", "Errore sconosciuto")
+                        status_box.error(msg)
+                        break
 
+                    elif ev_type == "result":
+                        final_answer = ev.get("answer", "") or ""
+                        final_contexts = ev.get("contexts", [])
+                        if not isinstance(final_contexts, list):
+                            final_contexts = []
 
-            st.markdown(answer if answer else "_(nessuna risposta)_")
+                        status_box.empty()
+                        answer_box.markdown(final_answer if final_answer else "_(nessuna risposta)_")
 
+                        if show_sources and final_contexts:
+                            with sources_box.container():
+                                with st.expander("Fonti / chunk usati"):
+                                    for i, c in enumerate(final_contexts, 1):
+                                        st.markdown(f"**Fonte {i}**")
+                                        st.code(c)
+                        break
 
-
-            if show_sources and contexts:
-
-                with st.expander("Fonti / chunk usati"):
-
-                    for i, c in enumerate(contexts, 1):
-
-                        st.markdown(f"**Fonte {i}**")
-
-                        st.code(c)
-
-
-
-            st.session_state.messages.append({
-
-                "role": "assistant",
-
-                "content": answer if answer else "",
-
-                "sources": contexts
-
-            })
-
+                if final_answer:
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": final_answer,
+                        "sources": final_contexts
+                    })
 
 
         except requests.HTTPError as e:
-
             st.error(f"Errore HTTP dal backend: {e}")
-
         except requests.RequestException as e:
-
             st.error(f"Errore di rete verso il backend: {e}")
-
         except Exception as e:
-
             st.error(f"Errore inatteso: {e}")
-
-    # Chiamata al backend + risposta
