@@ -206,13 +206,14 @@ if question:
                 answer_box = st.empty()
                 sources_box = st.empty()
 
-                with st.spinner("Sto cercando nei documenti..."):
-                    events = call_rag_stream(
-                        question,
-                        search_technique,
-                        st.session_state.session_id,
-                        force_fallback=force_fallback_ui
-                    )
+                status_box.info("Sto processando la richiesta...")
+
+                events = call_rag_stream(
+                    question,
+                    search_technique,
+                    st.session_state.session_id,
+                    force_fallback=force_fallback_ui
+                )
 
                 final_answer = ""
                 final_contexts = []
