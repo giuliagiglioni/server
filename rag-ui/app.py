@@ -85,7 +85,7 @@ def call_rag_stream(question: str, technique: str, session_id: str, force_fallba
 
     headers = {"Content-Type": "application/json"}
     headers["Accept"] = "text/event-stream"
-    
+
     if RAG_UI_API_KEY:
         headers["X-API-Key"] = RAG_UI_API_KEY
 
@@ -114,6 +114,24 @@ def call_rag_stream(question: str, technique: str, session_id: str, force_fallba
                 continue
 
 
+def render_references(refs: list):
+    # refs: List[{"url":..., "title":..., "section":...}]
+    if not isinstance(refs, list) or not refs:
+        return
+
+    for i, r in enumerate(refs, 1):
+        if not isinstance(r, dict):
+            continue
+        title = r.get("title") or f"Fonte {i}"
+        section = r.get("section") or ""
+        url = r.get("url") or ""
+        label = title + (f" — {section}" if section else "")
+
+        if url:
+            st.markdown(f"{i}. [{label}]({url})")
+        else:
+            st.markdown(f"{i}. {label}")
+
 
 # === Sidebar ===
 
@@ -138,7 +156,9 @@ with st.sidebar.popover(f"Tecnica di ricerca: {st.session_state.search_technique
     )
 
 search_technique = st.session_state.search_technique
-show_sources = st.sidebar.checkbox("Mostra fonti/chunk", value=True)
+#show_sources = st.sidebar.checkbox("Mostra fonti/chunk", value=True)
+show_sources = st.sidebar.checkbox("Mostra fonti", value=True)
+
 
 
 
@@ -151,14 +171,17 @@ if "messages" not in st.session_state:
 # === Render chat history ===
 st.title("RAG Assistant")
 
+
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
         if m["role"] == "assistant" and show_sources and m.get("sources"):
-            with st.expander("Fonti / chunk usati"):
-                for i, s in enumerate(m["sources"], 1):
-                    st.markdown(f"**Fonte {i}**")
-                    st.code(s)
+            with st.expander("Fonti usate"):
+                render_references(m["sources"])
+            #with st.expander("Fonti / chunk usati"):
+                #for i, s in enumerate(m["sources"], 1):
+                    #st.markdown(f"**Fonte {i}**")
+                    #st.code(s)
 
 # === Input ===
 question = st.chat_input("Scrivi una domanda...")
@@ -182,22 +205,30 @@ if question:
                     )
 
                 answer = resp.get("answer", "") or ""
-                contexts = resp.get("contexts", [])
-                if not isinstance(contexts, list):
-                    contexts = []
+                #contexts = resp.get("contexts", [])
+                #if not isinstance(contexts, list):
+                #    contexts = []
+
+                references = resp.get("references", [])
+                if not isinstance(references, list):
+                    references = []
 
                 st.markdown(answer if answer else "_(nessuna risposta)_")
 
-                if show_sources and contexts:
-                    with st.expander("Fonti / chunk usati"):
-                        for i, c in enumerate(contexts, 1):
-                            st.markdown(f"**Fonte {i}**")
-                            st.code(c)
+                #if show_sources and contexts:
+                if show_sources and references:
+                    #with st.expander("Fonti / chunk usati"):
+                    with st.expander("Fonti usate"):
+                        render_references(references)
+                        #for i, c in enumerate(contexts, 1):
+                        #    st.markdown(f"**Fonte {i}**")
+                        #    st.code(c)
 
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": answer,
-                    "sources": contexts
+                    #"sources": contexts
+                    "sources": references
                 })
 
             else:
@@ -216,7 +247,8 @@ if question:
                 )
 
                 final_answer = ""
-                final_contexts = []
+                #final_contexts = []
+                final_references = []
 
                 for ev in events:
                     ev_type = ev.get("type")
@@ -236,27 +268,36 @@ if question:
 
                     elif ev_type == "result":
                         final_answer = ev.get("answer", "") or ""
-                        final_contexts = ev.get("contexts", [])
-                        if not isinstance(final_contexts, list):
-                            final_contexts = []
+                        #final_contexts = ev.get("contexts", [])
+                        final_references = ev.get("references", [])
+                        #if not isinstance(final_contexts, list):
+                        #    final_contexts = []
+                        if not isinstance(final_references, list):
+                            final_references = []
 
                         status_box.empty()
                         answer_box.markdown(final_answer if final_answer else "_(nessuna risposta)_")
 
-                        if show_sources and final_contexts:
+                        #if show_sources and final_contexts:
+                        if show_sources and final_references:
                             with sources_box.container():
-                                with st.expander("Fonti / chunk usati"):
-                                    for i, c in enumerate(final_contexts, 1):
-                                        st.markdown(f"**Fonte {i}**")
-                                        st.code(c)
+                                #with st.expander("Fonti / chunk usati"):
+                                with st.expander("Fonti usate"):
+                                    render_references(final_references)
+                                    #for i, c in enumerate(final_contexts, 1):
+                                    #    st.markdown(f"**Fonte {i}**")
+                                    #    st.code(c)
                         break
 
                 if final_answer:
                     st.session_state.messages.append({
                         "role": "assistant",
                         "content": final_answer,
-                        "sources": final_contexts
+                        #"sources": final_contexts
+                        "sources": final_references
                     })
+
+                st.rerun()
 
 
         except requests.HTTPError as e:
