@@ -1,0 +1,350 @@
+import os
+import json
+import requests
+import streamlit as st
+import uuid
+
+st.set_page_config(page_title="Assistente accademico", layout="centered")
+
+st.markdown("""
+<div style="margin-top:10px;">
+    <h1 style="margin-bottom:3px; padding:0;">
+        Assistente accademico
+    </h1>
+    <h2 style="color:#6b7280; font-weight:400; font-size:20px; margin-bottom:40px; padding:0;">
+        Corso di Laurea Magistrale in Ingegneria Informatica e Robotica
+    </h2>
+</div>
+""", unsafe_allow_html=True)
+
+RAG_API_BASE_URL = os.getenv("RAG_API_BASE_URL", "http://rag-api:8000")
+RAG_API_TIMEOUT = float(os.getenv("RAG_API_TIMEOUT", "100"))
+
+#RAG_UI_API_KEY = os.getenv("RAG_UI_API_KEY", "")
+
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
+def reset_chat():
+    st.session_state.session_id = str(uuid.uuid4())
+
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Ciao! Fammi una domanda sui documenti.", "sources": []}
+    ]
+
+    st.session_state._do_rerun = True
+
+if st.session_state.get("_do_rerun"):
+    st.session_state._do_rerun = False
+    st.rerun()
+
+
+def call_rag(question: str, session_id: str, force_fallback: bool = False) -> dict:
+    url = f"{RAG_API_BASE_URL.rstrip('/')}/query"
+    payload = {
+        "question": question,
+        "search_technique": "dense",
+        "session_id": session_id,
+        "force_fallback": force_fallback,
+        "stream": False,
+    }
+
+    headers = {"Content-Type": "application/json"}
+
+    r = requests.post(
+        url,
+        headers=headers,
+        data=json.dumps(payload),
+        timeout=RAG_API_TIMEOUT,
+        verify=False
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def call_rag_stream(question: str, session_id: str, force_fallback: bool = False):
+    url = f"{RAG_API_BASE_URL.rstrip('/')}/query"
+    payload = {
+        "question": question,
+        "search_technique": "dense",
+        "session_id": session_id,
+        "force_fallback": force_fallback,
+        "stream": True,
+    }
+
+    headers = {"Content-Type": "application/json"}
+    headers["Accept"] = "text/event-stream"
+
+
+    with requests.post(
+        url,
+        headers=headers,
+        data=json.dumps(payload),
+        timeout=RAG_API_TIMEOUT,
+        verify=False,
+        stream=True
+    ) as r:
+        r.raise_for_status()
+
+        for raw_line in r.iter_lines(decode_unicode=True):
+            if not raw_line:
+                continue
+
+            line = raw_line.strip()
+            if not line.startswith("data:"):
+                continue
+
+            data = line[len("data:"):].strip()
+            try:
+                yield json.loads(data)
+            except json.JSONDecodeError:
+                continue
+
+
+def render_references(refs: list):
+    if not isinstance(refs, list) or not refs:
+        return
+
+    for i, r in enumerate(refs, 1):
+        if not isinstance(r, dict):
+            continue
+        title = r.get("title") or f"Fonte {i}"
+        section = r.get("section") or ""
+        url = r.get("url") or ""
+        label = title + (f" — {section}" if section else "")
+
+        if url:
+            st.markdown(f"{i}. [{label}]({url})")
+        else:
+            st.markdown(f"{i}. {label}")
+
+
+# === Session memory ===
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Ciao! Fammi una domanda sui documenti.", "sources": []}
+    ]
+
+
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
+        if m["role"] == "assistant" and m.get("sources"):
+            with st.expander("Fonti usate"):
+                render_references(m["sources"])
+
+
+# === Input ===
+#question = st.chat_input("Scrivi una domanda...")
+
+# === CUSTOM CHAT BAR ===
+st.markdown("""
+<style>
+/* Wrapper fisso in basso, come la chat bar */
+.chatbar-wrap{
+  position: fixed;
+  left: 0; right: 0;
+  bottom: 0;
+  padding: 0.75rem 1rem 1rem;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(8px);
+  z-index: 999;
+}
+
+/* Centered container (coerente con layout centered) */
+.chatbar{
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Stile "pill" simile a Streamlit */
+.chatpill{
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 9999px;
+  padding: 0.35rem 0.5rem;
+}
+
+/* Bottoni rotondi */
+.iconbtn{
+  width: 42px;
+  height: 42px;
+  border-radius: 9999px;
+  border: 1px solid #e5e7eb;
+  background: #f3f4f6;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+.iconbtn:hover{ background: #eaecef; }
+.iconbtn:active{ transform: scale(0.98); }
+
+/* Input: togli cornici "Streamlit" e rendilo integrato */
+.chatpill input{
+  border: none !important;
+  background: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Spazio sotto al contenuto per non coprire con la barra fissa */
+.block-container { padding-bottom: 7rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# layout: refresh | input | send
+col_r, col_in, col_s = st.columns([1, 8, 1], vertical_alignment="center")
+
+with col_r:
+    refresh = st.button("⟳", key="btn_refresh", use_container_width=True)
+
+with col_in:
+    question = st.text_input(
+        "",
+        placeholder="Scrivi una domanda...",
+        key="chat_text",
+        label_visibility="collapsed",
+    )
+
+with col_s:
+    send = st.button("➤", key="btn_send", use_container_width=True)
+
+# Applica stile "icon button" ai due button Streamlit
+st.markdown("""
+<style>
+/* rende i due st.button identici ai bottoni rotondi sopra */
+div[data-testid="column"]:has(button[kind="secondary"]) button,
+div[data-testid="column"] button[kind="secondary"],
+div[data-testid="column"] button{
+  border-radius: 9999px !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  background: #f3f4f6 !important;
+  border: 1px solid #e5e7eb !important;
+  padding: 0 !important;
+}
+div[data-testid="column"] button:hover{
+  background: #eaecef !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Refresh
+if refresh:
+    reset_chat()
+
+use_stream = True
+force_fallback_ui = False
+
+# Invio (click su ➤)
+if send and question:
+    st.session_state.messages.append({"role": "user", "content": question, "sources": []})
+    with st.chat_message("user"):
+        st.markdown(question)
+
+    with st.chat_message("assistant"):
+        try:
+            if not use_stream:
+                with st.spinner("Sto cercando nei documenti..."):
+                    resp = call_rag(
+                        question,
+                        st.session_state.session_id,
+                        force_fallback=force_fallback_ui
+                    )
+
+                answer = resp.get("answer", "") or ""
+
+                references = resp.get("references", [])
+                if not isinstance(references, list):
+                    references = []
+
+                st.markdown(answer if answer else "_(nessuna risposta)_")
+
+                if references:
+                    with st.expander("Fonti usate"):
+                        render_references(references)
+
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": answer,
+                    "sources": references
+                })
+
+            else:
+                # STREAMING MODE (SSE)
+                status_box = st.empty()
+                answer_box = st.empty()
+                sources_box = st.empty()
+
+                status_box.info("Sto processando la richiesta...")
+
+                events = call_rag_stream(
+                    question,
+                    st.session_state.session_id,
+                    force_fallback=force_fallback_ui
+                )
+
+                final_answer = ""
+                final_references = []
+
+                for ev in events:
+                    ev_type = ev.get("type")
+
+                    if ev_type == "heartbeat":
+                        continue
+
+                    if ev_type == "status":
+                        msg = ev.get("message", "")
+                        if msg:
+                            status_box.info(msg)
+
+                    elif ev_type == "error":
+                        msg = ev.get("message", "Errore sconosciuto")
+                        status_box.error(msg)
+                        break
+
+                    elif ev_type == "result":
+                        final_answer = ev.get("answer", "") or ""
+                        final_references = ev.get("references", [])
+
+                        if not isinstance(final_references, list):
+                            final_references = []
+
+                        status_box.empty()
+                        answer_box.markdown(final_answer if final_answer else "_(nessuna risposta)_")
+
+                        if final_references:
+                            with sources_box.container():
+                                with st.expander("Fonti usate"):
+                                    render_references(final_references)
+
+                        break
+
+                if final_answer:
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": final_answer,
+                        "sources": final_references
+                    })
+
+                #st.rerun()
+
+
+        except requests.HTTPError as e:
+            st.error(f"Errore HTTP dal backend: {e}")
+        except requests.RequestException as e:
+            st.error(f"Errore di rete verso il backend: {e}")
+        except Exception as e:
+            st.error(f"Errore inatteso: {e}")
+    pass
+
+
+#DA FINIRE DI SISTEMARE
