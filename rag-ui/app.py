@@ -4,63 +4,53 @@ import requests
 import streamlit as st
 import uuid
 
-st.set_page_config(page_title="RAG Assistant", layout="centered")
+st.set_page_config(page_title="Assistente accademico", layout="centered")
+#st.caption("Corso di Laurea Magistrale in Ingegneria Informatica e Robotica")
 
-st.markdown(
-    """
-    <style>
-    /* Larghezza “sidebar-like” per il popover */
-    :root { --sidebar-like-width: 21rem; }
+st.markdown("""
+<div style="margin-top:10px;">
+    <h1 style="margin-bottom:3px; padding:0;">
+        Assistente accademico
+    </h1>
+    <h2 style="color:#6b7280; font-weight:400; font-size:20px; margin-bottom:40px; padding:0;">
+        Corso di Laurea Magistrale in Ingegneria Informatica e Robotica
+    </h2>
+</div>
+""", unsafe_allow_html=True)
 
-    /* Bottone del popover in sidebar: full width */
-    section[data-testid="stSidebar"] [data-testid="stPopover"] button {
-        width: 100% !important;
-        justify-content: space-between !important;
-    }
-
-    /* Corpo del popover: forzalo a larghezza sidebar e aggancialo a sinistra */
-    div[data-testid="stPopoverBody"]{
-        width: var(--sidebar-like-width) !important;
-        max-width: var(--sidebar-like-width) !important;
-        min-width: var(--sidebar-like-width) !important;
-        left: 0 !important;          /* evita che si “allarghi” verso destra */
-        right: auto !important;
-    }
-
-    /* Contenuto interno: occupa tutta la larghezza del popover */
-    div[data-testid="stPopoverBody"] div[data-testid="stVerticalBlock"],
-    div[data-testid="stPopoverBody"] div[data-testid="stRadio"]{
-        width: 100% !important;
-        max-width: 100% !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-
-# === Config ===
 RAG_API_BASE_URL = os.getenv("RAG_API_BASE_URL", "http://rag-api:8000")
-RAG_API_TIMEOUT = float(os.getenv("RAG_API_TIMEOUT", "60"))
-# Se in futuro vuoi proteggere /query con una chiave interna:
-RAG_UI_API_KEY = os.getenv("RAG_UI_API_KEY", "")
+RAG_API_TIMEOUT = float(os.getenv("RAG_API_TIMEOUT", "100"))
+
+#RAG_UI_API_KEY = os.getenv("RAG_UI_API_KEY", "")
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
-def call_rag(question: str, technique: str, session_id: str, force_fallback: bool = False) -> dict:
+def reset_chat():
+    st.session_state.session_id = str(uuid.uuid4())
+
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Ciao! Fammi una domanda sui documenti.", "sources": []}
+    ]
+
+    st.session_state._do_rerun = True
+
+if st.session_state.get("_do_rerun"):
+    st.session_state._do_rerun = False
+    st.rerun()
+
+
+def call_rag(question: str, session_id: str, force_fallback: bool = False) -> dict:
     url = f"{RAG_API_BASE_URL.rstrip('/')}/query"
     payload = {
         "question": question,
-        "search_technique": technique,
+        "search_technique": "dense",
         "session_id": session_id,
         "force_fallback": force_fallback,
         "stream": False,
     }
 
     headers = {"Content-Type": "application/json"}
-    if RAG_UI_API_KEY:
-        headers["X-API-Key"] = RAG_UI_API_KEY
 
     r = requests.post(
         url,
@@ -73,11 +63,11 @@ def call_rag(question: str, technique: str, session_id: str, force_fallback: boo
     return r.json()
 
 
-def call_rag_stream(question: str, technique: str, session_id: str, force_fallback: bool = False):
+def call_rag_stream(question: str, session_id: str, force_fallback: bool = False):
     url = f"{RAG_API_BASE_URL.rstrip('/')}/query"
     payload = {
         "question": question,
-        "search_technique": technique,
+        "search_technique": "dense",
         "session_id": session_id,
         "force_fallback": force_fallback,
         "stream": True,
@@ -86,8 +76,6 @@ def call_rag_stream(question: str, technique: str, session_id: str, force_fallba
     headers = {"Content-Type": "application/json"}
     headers["Accept"] = "text/event-stream"
 
-    if RAG_UI_API_KEY:
-        headers["X-API-Key"] = RAG_UI_API_KEY
 
     with requests.post(
         url,
@@ -115,7 +103,6 @@ def call_rag_stream(question: str, technique: str, session_id: str, force_fallba
 
 
 def render_references(refs: list):
-    # refs: List[{"url":..., "title":..., "section":...}]
     if not isinstance(refs, list) or not refs:
         return
 
@@ -134,32 +121,7 @@ def render_references(refs: list):
 
 
 # === Sidebar ===
-
-st.sidebar.title("Impostazioni")
-
-OPTIONS = ["hybrid", "dense", "sparse"]
-
-if "search_technique" not in st.session_state:
-    st.session_state.search_technique = "dense"
-
-def _update_technique():
-    st.session_state.search_technique = st.session_state._technique_tmp
-
-with st.sidebar.popover(f"Tecnica di ricerca: {st.session_state.search_technique}"):
-    st.radio(
-        "Tecnica di ricerca",
-        OPTIONS,
-        index=OPTIONS.index(st.session_state.search_technique),
-        key="_technique_tmp",
-        label_visibility="collapsed",
-        on_change=_update_technique,
-    )
-
-search_technique = st.session_state.search_technique
-#show_sources = st.sidebar.checkbox("Mostra fonti/chunk", value=True)
-show_sources = st.sidebar.checkbox("Mostra fonti", value=True)
-
-
+st.sidebar.button("Nuova domanda", on_click=reset_chat, use_container_width=True)
 
 
 # === Session memory ===
@@ -169,19 +131,16 @@ if "messages" not in st.session_state:
     ]
 
 # === Render chat history ===
-st.title("RAG Assistant")
+#st.title("Assistente accademico")
 
 
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
-        if m["role"] == "assistant" and show_sources and m.get("sources"):
+        if m["role"] == "assistant" and m.get("sources"):
             with st.expander("Fonti usate"):
                 render_references(m["sources"])
-            #with st.expander("Fonti / chunk usati"):
-                #for i, s in enumerate(m["sources"], 1):
-                    #st.markdown(f"**Fonte {i}**")
-                    #st.code(s)
+
 
 # === Input ===
 question = st.chat_input("Scrivi una domanda...")
@@ -199,15 +158,11 @@ if question:
                 with st.spinner("Sto cercando nei documenti..."):
                     resp = call_rag(
                         question,
-                        search_technique,
                         st.session_state.session_id,
                         force_fallback=force_fallback_ui
                     )
 
                 answer = resp.get("answer", "") or ""
-                #contexts = resp.get("contexts", [])
-                #if not isinstance(contexts, list):
-                #    contexts = []
 
                 references = resp.get("references", [])
                 if not isinstance(references, list):
@@ -215,19 +170,13 @@ if question:
 
                 st.markdown(answer if answer else "_(nessuna risposta)_")
 
-                #if show_sources and contexts:
-                if show_sources and references:
-                    #with st.expander("Fonti / chunk usati"):
+                if references:
                     with st.expander("Fonti usate"):
                         render_references(references)
-                        #for i, c in enumerate(contexts, 1):
-                        #    st.markdown(f"**Fonte {i}**")
-                        #    st.code(c)
 
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": answer,
-                    #"sources": contexts
                     "sources": references
                 })
 
@@ -241,13 +190,11 @@ if question:
 
                 events = call_rag_stream(
                     question,
-                    search_technique,
                     st.session_state.session_id,
                     force_fallback=force_fallback_ui
                 )
 
                 final_answer = ""
-                #final_contexts = []
                 final_references = []
 
                 for ev in events:
@@ -268,36 +215,29 @@ if question:
 
                     elif ev_type == "result":
                         final_answer = ev.get("answer", "") or ""
-                        #final_contexts = ev.get("contexts", [])
                         final_references = ev.get("references", [])
-                        #if not isinstance(final_contexts, list):
-                        #    final_contexts = []
+
                         if not isinstance(final_references, list):
                             final_references = []
 
                         status_box.empty()
                         answer_box.markdown(final_answer if final_answer else "_(nessuna risposta)_")
 
-                        #if show_sources and final_contexts:
-                        if show_sources and final_references:
+                        if final_references:
                             with sources_box.container():
-                                #with st.expander("Fonti / chunk usati"):
                                 with st.expander("Fonti usate"):
                                     render_references(final_references)
-                                    #for i, c in enumerate(final_contexts, 1):
-                                    #    st.markdown(f"**Fonte {i}**")
-                                    #    st.code(c)
+
                         break
 
                 if final_answer:
                     st.session_state.messages.append({
                         "role": "assistant",
                         "content": final_answer,
-                        #"sources": final_contexts
                         "sources": final_references
                     })
 
-                st.rerun()
+                #st.rerun()
 
 
         except requests.HTTPError as e:
