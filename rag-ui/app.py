@@ -5,7 +5,6 @@ import streamlit as st
 import uuid
 
 st.set_page_config(page_title="Assistente accademico", layout="centered")
-#st.caption("Corso di Laurea Magistrale in Ingegneria Informatica e Robotica")
 
 st.markdown("""
 <div style="margin-top:10px;">
@@ -120,18 +119,11 @@ def render_references(refs: list):
             st.markdown(f"{i}. {label}")
 
 
-# === Sidebar ===
-st.sidebar.button("Nuova domanda", on_click=reset_chat, use_container_width=True)
-
-
 # === Session memory ===
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "Ciao! Fammi una domanda sui documenti.", "sources": []}
     ]
-
-# === Render chat history ===
-#st.title("Assistente accademico")
 
 
 for m in st.session_state.messages:
