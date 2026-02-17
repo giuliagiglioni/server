@@ -129,8 +129,6 @@ def render_references(refs: list):
             st.markdown(f"- {label}{idx_suffix}")
 
 
-
-# === Session memory ===
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "Ciao! Fammi una domanda sui documenti.", "sources": []}
@@ -142,6 +140,19 @@ if "pending_question" not in st.session_state:
 if "processing_qid" not in st.session_state:
     st.session_state.processing_qid = None
 
+if "is_generating" not in st.session_state:
+    st.session_state.is_generating = False
+
+if "active_job" not in st.session_state:
+    st.session_state.active_job = None
+
+if st.session_state.is_generating and not st.session_state.pending_question and not st.session_state.active_job:
+    st.session_state.is_generating = False
+
+if "rerun_after_answer" not in st.session_state:
+    st.session_state.rerun_after_answer = False
+
+
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
@@ -150,15 +161,19 @@ for m in st.session_state.messages:
                 render_references(m["sources"])
 
 
-# === Input ===
-question = st.chat_input("Scrivi una domanda...", key="chat_input")
+question = st.chat_input("Scrivi una domanda...", key="chat_input", disabled=st.session_state.is_generating)
 
 if question:
-    st.session_state.pending_question = {
-        "id": str(uuid.uuid4()),
-        "text": question
-    }
-    st.rerun()
+    if st.session_state.is_generating:
+        st.toast("Sto ancora rispondendo…", icon="⏳")
+    else:
+        st.session_state.is_generating = True
+
+        st.session_state.pending_question = {
+            "id": str(uuid.uuid4()),
+            "text": question
+        }
+        st.rerun()
 
 
 #col_in, col_btn = st.columns([12, 1], vertical_alignment="bottom")
@@ -174,17 +189,26 @@ force_fallback_ui = False
 
 pending = st.session_state.get("pending_question")
 
+if st.session_state.is_generating and st.session_state.active_job:
+    pending = st.session_state.active_job
+
 if pending:
     qid = pending["id"]
     qtext = pending["text"]
 
-    if st.session_state.processing_qid == qid:
-        st.stop()
-    st.session_state.processing_qid = qid
+    if st.session_state.processing_qid != qid:
+        st.session_state.processing_qid = qid
+        st.session_state.active_job = {"id": qid, "text": qtext, "user_added": False}
+        st.session_state.pending_question = None
+        st.session_state.is_generating = True
+    else:
+        st.session_state.pending_question = None
+        st.session_state.is_generating = True
 
-    st.session_state.pending_question = None
+    if st.session_state.active_job and not st.session_state.active_job.get("user_added", False):
+        st.session_state.messages.append({"role": "user", "content": qtext, "sources": []})
+        st.session_state.active_job["user_added"] = True
 
-    st.session_state.messages.append({"role": "user", "content": qtext, "sources": []})
     with st.chat_message("user"):
         st.markdown(qtext)
 
@@ -273,12 +297,20 @@ if pending:
                         "sources": final_references
                     })
 
-                #st.rerun()
-
-
         except requests.HTTPError as e:
             st.error(f"Errore HTTP dal backend: {e}")
         except requests.RequestException as e:
             st.error(f"Errore di rete verso il backend: {e}")
         except Exception as e:
             st.error(f"Errore inatteso: {e}")
+
+        finally:
+            st.session_state.is_generating = False
+            st.session_state.processing_qid = None
+            st.session_state.active_job = None
+            st.session_state.pending_question = None
+            st.session_state.rerun_after_answer = True
+
+if st.session_state.get("rerun_after_answer", False):
+    st.session_state.rerun_after_answer = False
+    st.rerun()
