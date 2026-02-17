@@ -136,6 +136,11 @@ if "messages" not in st.session_state:
         {"role": "assistant", "content": "Ciao! Fammi una domanda sui documenti.", "sources": []}
     ]
 
+if "pending_question" not in st.session_state:
+    st.session_state.pending_question = None
+
+if "processing_qid" not in st.session_state:
+    st.session_state.processing_qid = None
 
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
@@ -146,21 +151,49 @@ for m in st.session_state.messages:
 
 
 # === Input ===
-question = st.chat_input("Scrivi una domanda...")
+question = st.chat_input("Scrivi una domanda...", key="chat_input")
+
+if question:
+    st.session_state.pending_question = {
+        "id": str(uuid.uuid4()),
+        "text": question
+    }
+    st.rerun()
+
+
+#col_in, col_btn = st.columns([12, 1], vertical_alignment="bottom")
+
+#with col_in:
+#    question = st.chat_input("Scrivi una domanda…")
+
+#with col_btn:
+#    st.button("🔄", on_click=reset_chat, use_container_width=True)
+
 use_stream = True
 force_fallback_ui = False
 
-if question:
-    st.session_state.messages.append({"role": "user", "content": question, "sources": []})
+pending = st.session_state.get("pending_question")
+
+if pending:
+    qid = pending["id"]
+    qtext = pending["text"]
+
+    if st.session_state.processing_qid == qid:
+        st.stop()
+    st.session_state.processing_qid = qid
+
+    st.session_state.pending_question = None
+
+    st.session_state.messages.append({"role": "user", "content": qtext, "sources": []})
     with st.chat_message("user"):
-        st.markdown(question)
+        st.markdown(qtext)
 
     with st.chat_message("assistant"):
         try:
             if not use_stream:
                 with st.spinner("Sto cercando nei documenti..."):
                     resp = call_rag(
-                        question,
+                        qtext,
                         st.session_state.session_id,
                         force_fallback=force_fallback_ui
                     )
@@ -192,7 +225,7 @@ if question:
                 status_box.info("Sto processando la richiesta...")
 
                 events = call_rag_stream(
-                    question,
+                    qtext,
                     st.session_state.session_id,
                     force_fallback=force_fallback_ui
                 )
