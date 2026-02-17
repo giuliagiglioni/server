@@ -108,15 +108,26 @@ def render_references(refs: list):
     for i, r in enumerate(refs, 1):
         if not isinstance(r, dict):
             continue
+
         title = r.get("title") or f"Fonte {i}"
         section = r.get("section") or ""
         url = r.get("url") or ""
+
+        indices = r.get("indices") or []
+        if isinstance(indices, list):
+            clean_indices = sorted({int(x) for x in indices if str(x).isdigit()})
+        else:
+            clean_indices = []
+
+        idx_suffix = (" " + " ".join(f"[{n}]" for n in clean_indices)) if clean_indices else ""
+
         label = title + (f" — {section}" if section else "")
 
         if url:
-            st.markdown(f"{i}. [{label}]({url})")
+            st.markdown(f"- [{label}]({url}){idx_suffix}")
         else:
-            st.markdown(f"{i}. {label}")
+            st.markdown(f"- {label}{idx_suffix}")
+
 
 
 # === Session memory ===
