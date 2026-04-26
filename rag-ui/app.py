@@ -29,7 +29,7 @@ def reset_chat():
     st.session_state.session_id = str(uuid.uuid4())
 
     st.session_state.messages = [
-        {"role": "assistant", "content": "Ciao! Fammi una domanda sui documenti.", "sources": []}
+        {"role": "assistant", "content": "Ciao! Fammi una domanda.", "sources": []}
     ]
 
     st.session_state._do_rerun = True
